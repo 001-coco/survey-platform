@@ -25,7 +25,11 @@ npm run dev
 
 ## 上线
 
-配置已写好，按 **[DEPLOY.md](./DEPLOY.md)** 操作：后端 Render（`render.yaml`）、前端 Vercel（`vercel.json`），全程网页点击。
+按 **[DEPLOY.md](./DEPLOY.md)** 操作：整个项目部署成**一个 Vercel 项目**，前端页面与 `/api` 接口同域。
+
+- 免费 Hobby 套餐，**不需要绑卡**
+- 不需要配任何环境变量、不需要处理跨域
+- 代价：Serverless 没有持久磁盘，数据会随实例回收而重置（演示够用，真实收数据需换数据库）
 
 ## 完整闭环
 
@@ -36,7 +40,9 @@ npm run dev
 ## 目录
 
 ```
-server/index.js                 Express 后端（登录 / CRUD / 发布 / 提交 / 统计）
+server/app.js                   Express 应用本体（登录 / CRUD / 发布 / 提交 / 统计）
+server/index.js                 本地 / 服务器启动入口（只负责 app.listen）
+api/index.js                    Vercel Serverless 入口（复用同一个 app）
 src/
   api/request.js                Axios 封装（统一错误处理 + 取消重复请求 + 401 跳转）
   api/survey.js                 接口定义

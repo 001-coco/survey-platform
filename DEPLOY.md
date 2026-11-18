@@ -1,118 +1,87 @@
-# 上线部署手册
+# 上线部署（Vercel 单项目，免费、不绑卡）
 
-目标：得到一个能发给别人打开的网址。全程在网页上点，不用敲代码命令。
+整个项目部署成**一个** Vercel 项目：前端页面和 `/api` 接口同域，不需要买服务器、不需要配跨域、不需要填任何环境变量。
 
-分工：
-- **后端**（接口）→ Render，免费，已由 `render.yaml` 配好
-- **前端**（网页）→ Vercel，免费，已由 `vercel.json` 配好
-
-两边的配置都在仓库里了，你只需要在各平台**点几下授权**。
+- 网页地址：`https://xxx.vercel.app`
+- 接口地址：`https://xxx.vercel.app/api/...`（同一个域名）
 
 ---
 
-## 第 0 步：把代码传到 GitHub（只需一次）
+## 部署步骤
 
-在项目目录 `C:\Users\Yolo\Desktop\work\survey-platform` 打开终端，执行：
+### 1. 打开 Vercel 并登录
 
-```bash
-git init
-git add .
-git commit -m "ready to deploy"
-```
+https://vercel.com → **Continue with GitHub** → 授权
 
-然后去 https://github.com/new 新建一个仓库（名字随意，比如 `survey-platform`，**不要**勾选添加 README），把页面上的命令复制过来执行，长得像这样：
+免费 Hobby 套餐不需要绑卡。
 
-```bash
-git remote add origin https://github.com/你的用户名/survey-platform.git
-git branch -M main
-git push -u origin main
-```
+### 2. 导入仓库
 
-浏览器会让你登录 GitHub，登录一次即可。
+- 点 **Add New...** → **Project**
+- 在列表里找到 `survey-platform` → 点 **Import**
 
-> `.gitignore` 已配好，`node_modules`、`dist`、`server/db.json` 不会被传上去。
+（如果列表里没有，点 **Adjust GitHub App Permissions** 把仓库授权给 Vercel）
 
----
+### 3. 直接点 Deploy
 
-## 第 1 步：部署后端（Render）
+**什么都不要改，也不要加环境变量。**
 
-1. 打开 https://render.com ，用 **GitHub 账号**登录（这一步就是授权，只有你能做）
-2. 点右上角 **New** → 选 **Blueprint**
-3. 选中你刚创建的仓库 → 点 **Apply / Deploy**
-4. 等 2~3 分钟，状态变成 **Live** 就成功了
+页面上的配置会自动读成：
 
-不用填任何参数，`render.yaml` 里已经写好了：启动命令、Node 版本、数据文件位置、跨域白名单。
+| 项 | 值 | 来源 |
+|---|---|---|
+| Framework Preset | Vite | `vercel.json` |
+| Build Command | `npm run build` | `vercel.json` |
+| Output Directory | `dist` | `vercel.json` |
 
-**部署完成后，页面上会显示一个地址**，形如：
-
-```
-https://survey-api.onrender.com
-```
-
-👉 **把这个地址记下来，下一步要用。** 如果 `survey-api` 这个名字被别人占了，Render 会让你改名，那就用你实际得到的地址。
-
-**自测后端通不通**：浏览器打开 `https://你的地址/api/public/surveys/test`
-
-- 返回 `{"code":404,"message":"问卷不存在或未发布"}` → ✅ 正常
-- 打不开或 502 → 等一会儿再试，免费实例冷启动要 50 秒左右
+点 **Deploy**，等 1~2 分钟。
 
 ---
 
-## 第 2 步：部署前端（Vercel）
+## 部署完成后
 
-1. 打开 https://vercel.com ，用 **GitHub 账号**登录
-2. 点 **Add New** → **Project** → 找到你的仓库 → 点 **Import**
-3. 展开 **Environment Variables**，添加一条：
+Vercel 会给你形如 `https://survey-platform-abc123.vercel.app` 的地址，打开即可用：
 
-   | Name | Value |
-   |---|---|
-   | `VITE_API_BASE` | `https://survey-api.onrender.com/api` |
+- 账号 `admin` / 密码 `admin123`
 
-   ⚠️ 把域名换成你第 1 步实际得到的地址，**末尾一定要带 `/api`**
+**为什么不用配环境变量？**
 
-4. 点 **Deploy**，等 1 分钟
-
-Vercel 会给你一个 `https://xxx.vercel.app` 的网址，打开它，用 `admin / admin123` 登录 —— 上线完成。
-
-> 环境变量是**构建时**打进代码里的，以后改了它必须点一次 Redeploy 才生效。
+前端默认请求 `/api`（`src/api/request.js` 里的兜底值），而同域下的 `/api` 正好由 `api/index.js` 这个函数处理，所以生产环境什么都不用配。
 
 ---
 
-## 换 Cloudflare Pages 也行
+## 关于数据（重要）
 
-不想用 Vercel 就换 Cloudflare Pages，效果一样：
+Vercel 的 Serverless 函数**没有持久磁盘**，`/tmp` 只在单个实例存活期间有效：
 
-1. https://dash.cloudflare.com → Workers & Pages → Create → Pages → Connect to Git
-2. 选仓库，构建设置填：
-   - Framework preset：`Vue`
-   - Build command：`npm run build`
-   - Build output directory：`dist`
-3. 环境变量加 `VITE_API_BASE`，同上
-4. Save and Deploy
+- 一段时间没人访问 → 实例回收 → 数据回到初始状态（只剩默认账号）
+- 两个人同时访问可能命中不同实例 → 互相看不到对方的数据
 
-`render.yaml` 里的跨域白名单已经含 `*.pages.dev`，不用回去改后端。
+**所以：用来演示、面试展示没问题；真要收集真实问卷数据，必须换数据库。**
 
----
+换数据库只需改 `server/app.js` 里的 `readDB()` / `writeDB()` 两个函数，上层的路由和校验都不用动。可选方案：
 
-## 部署后数据会丢，这是正常的
-
-后端用的是 JSON 文件存数据，Render 免费实例的文件系统是**临时**的（写在 `/tmp`）：
-
-- 服务重启 / 重新部署 → 数据库被重置，只剩默认账号 `admin / admin123`
-- 免费实例闲置 15 分钟会休眠，下次访问要等 50 秒左右才响应
-
-**要长期保存数据**，得换成托管数据库（比如 Render 自带的 Postgres，或 Supabase 免费版），改 `server/index.js` 里的 `readDB` / `writeDB` 两个函数即可。
-
-如果只是**演示 / 面试展示**，现在的方案够用，提前跟面试官说一句「用的是临时存储」反而显得你知道取舍。
+- **Supabase**（Postgres，免费额度够用，不绑卡）
+- **Upstash Redis**（免费额度，按请求计费）
+- **Vercel Postgres / KV**（需要绑卡）
 
 ---
 
-## 出问题了看这里
+## 出问题看这里
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| 登录一直转圈 / 失败 | 前端 `VITE_API_BASE` 没配或漏了 `/api` | 回 Vercel 检查环境变量，改完 Redeploy |
-| 控制台报 403 + 「跨域来源不被允许」 | 前端域名不在后端白名单 | Render → Environment → 改 `ALLOWED_ORIGINS`，加上你的前端域名（逗号分隔），保存后会自动重启 |
-| 后端第一次访问特别慢 | 免费实例休眠中 | 等 50 秒，属正常现象 |
-| 重启后数据全没了 | 临时文件系统 | 见上一节，演示用可忽略 |
-| 后端报 `Cannot find module 'express'` | 依赖被当成开发依赖没装上 | 已在 `package.json` 修好，确认推上去的是最新代码 |
+| 打开页面 404 | 部署失败或构建产物路径不对 | Vercel → Deployments → 看构建日志 |
+| 登录报「网络异常」 | `/api` 请求没有到达函数 | Vercel → 项目 → Functions 里确认 `api/index.js` 存在 |
+| 接口 500 | 函数运行时报错 | Vercel → 项目 → Logs（Real-time）查看堆栈 |
+| 登录后一会儿就掉线 | accessToken 只有 2 分钟，靠 refresh 续期 | 正常现象，会自动刷新；Network 里能看到 `/api/auth/refresh` |
+| 刷新页面数据没了 | 上面的「关于数据」 | 演示可忽略 |
+| 想改成前后端分开部署 | 需要另配 `VITE_API_BASE` 和后端 `ALLOWED_ORIGINS` | 见 `.env.example` |
+
+---
+
+## 本地开发（不受影响）
+
+双击项目根目录的 `start.bat`，它会起后端 3000 + 前端 5173，Vite 把 `/api` 代理到 3000。
+
+本地仍然用 `server/index.js` 常驻启动，和线上走的是同一份 `server/app.js`。
