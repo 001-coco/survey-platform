@@ -3,96 +3,88 @@
 ## 架构（为什么这么绕）
 
 ```
-浏览器  →  https://xxx.pages.dev        页面（Cloudflare Pages，国内可访问）
-        →  https://xxx.pages.dev/api/*  Cloudflare Function 转发
-                                        ↓ （服务器到服务器，不走国内 DNS）
+浏览器  →  https://xxx.netlify.app        页面（Netlify，国内可访问，GitHub 登录免邮箱验证）
+        →  https://xxx.netlify.app/api/*  函数转发
+                                        ↓（服务器到服务器，不走国内 DNS）
                      https://xxx.vercel.app/api/*   真正的接口（Vercel）
 ```
 
-原因：`*.vercel.app` 在国内被 DNS 污染，浏览器打不开；`*.pages.dev` 可以正常访问。
+原因：`*.vercel.app` 在国内被 DNS 劫持（解析到无关 IP，换 DNS、用加密 DNS 均无效），浏览器打不开；而 `*.netlify.app` 和 `*.pages.dev` 可以正常访问。
 
-所以页面放 Cloudflare，接口请求由 Cloudflare 边缘节点转发给 Vercel。**浏览器只和 pages.dev 打交道**，前端仍然是同域 `/api`，不存在跨域。
+所以页面放在能访问的平台上，接口请求由平台的服务端转发给 Vercel。浏览器全程只和 netlify.app 打交道，前端仍然是同域 `/api`，不存在跨域。
 
-转发实现在 `functions/api/[[path]].js`，只负责搬运请求，不改业务。
+- Netlify 版转发：`netlify/functions/api.js`
+- Cloudflare 版转发：`functions/api/[[path]].js`
+
+两套只保留一套即可，转发逻辑完全一样。
 
 ---
 
-## 现状
+## 方案 A：Netlify（推荐）
 
-| 部分 | 状态 |
+**优点：用 GitHub 账号登录，不需要邮箱验证码。**
+
+### 1. 注册 / 登录
+
+https://app.netlify.com
+
+点 **Sign up** → 选 **GitHub** → 授权。
+
+不需要邮箱验证，不需要绑卡。
+
+### 2. 导入仓库
+
+- **Add new site** → **Import an existing project**
+- 选 **GitHub** → 授权 → 选 `001-coco/survey-platform`
+
+### 3. 确认配置
+
+Netlify 会读取仓库里的 `netlify.toml`，自动填好：
+
+| 字段 | 值 |
 |---|---|
-| 后端接口 | ✅ 已部署在 Vercel（`survey-platform.vercel.app`） |
-| 前端页面 | 待部署到 Cloudflare Pages（就是下面这几步） |
-
----
-
-## 第 1 步：注册 Cloudflare
-
-https://dash.cloudflare.com/sign-up
-
-- 用邮箱 + 密码注册即可（也可以选 GitHub 登录）
-- **不需要绑卡**
-- 注册后要收一封验证邮件，点邮件里的链接
-
----
-
-## 第 2 步：创建 Pages 项目
-
-登录后进入控制台：
-
-1. 左侧菜单点 **Workers & Pages**
-2. 点 **Create**（或 **Create application**）
-3. 切到 **Pages** 标签 → 点 **Connect to Git**
-4. 授权 GitHub → 选仓库 `001-coco/survey-platform` → **Begin setup**
-
----
-
-## 第 3 步：构建配置
-
-| 字段 | 填什么 |
-|---|---|
-| Project name | `survey-platform`（决定网址前缀） |
-| Production branch | `main` |
-| Framework preset | **Vue** |
 | Build command | `npm run build` |
-| Build output directory | `dist` |
+| Publish directory | `dist` |
 
-选 `Vue` 后构建命令和输出目录会自动填好，核对一下即可。
+**不用加任何环境变量。**
 
-**环境变量：不用加任何一条。**
+点 **Deploy site**，等 1~2 分钟。
 
-点 **Save and Deploy**，等 1~2 分钟。
+### 4. 拿到链接
+
+```
+https://随机名字.netlify.app
+```
+
+可在 **Site configuration → Change site name** 改成好记的名字。
 
 ---
 
-## 第 4 步：拿到链接
+## 方案 B：Cloudflare Pages
 
-部署完成后会显示：
+同样可行，但注册要收邮箱验证码（QQ 邮箱容易拦截，去垃圾箱找）。
 
-```
-https://survey-platform.pages.dev
-```
+1. https://dash.cloudflare.com → 注册 → 验证邮箱
+2. **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
+3. 选仓库，Framework preset 选 **Vue**，Build command `npm run build`，Output `dist`
+4. **Save and Deploy**
 
-（名字被占用的话会带随机后缀）
-
-打开它，用 `admin / admin123` 登录。
-
-**这个链接国内可以直接打开，发给别人也能打开。**
+得到 `https://xxx.pages.dev`。
 
 ---
 
 ## 如果接口报错
 
-说明 `functions/api/[[path]].js` 里写死的后端地址不对。去核对：
+说明转发层里写死的 Vercel 地址不对（默认 `https://survey-platform.vercel.app`）。
 
-1. 打开 Vercel 项目 → **Settings** → **Domains**，复制真实域名
-2. Cloudflare Pages 项目 → **Settings** → **Environment variables** → 添加：
+1. Vercel 项目 → **Settings** → **Domains**，复制真实域名
+2. 在 Netlify / Cloudflare 的环境变量里加：
 
    | Name | Value |
    |---|---|
    | `BACKEND_ORIGIN` | `https://你的真实域名.vercel.app` |
 
-3. 回到 **Deployments** → 最新那条 → 右侧 `...` → **Retry deployment**
+3. 重新部署（Netlify: Deploys → Trigger deploy）
 
 ---
 
@@ -111,11 +103,12 @@ https://survey-platform.pages.dev
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| pages.dev 打开白屏 | 构建产物目录填错 | 确认 Build output directory 是 `dist` |
-| 登录提示「网络异常」 | 转发地址不对 | 见上面「如果接口报错」 |
-| 接口返回 502 | Cloudflare 连不上 Vercel | Vercel 项目被删除或域名变了，核对 `BACKEND_ORIGIN` |
-| 改了代码没生效 | 没推送或没重新部署 | `git push` 后 Cloudflare 会自动重新构建 |
+| 打开白屏 | 发布目录填错 | 确认 publish/output 是 `dist` |
+| 登录提示「网络异常」 | 转发地址不对 | 见「如果接口报错」 |
+| 接口 502 | 平台连不上 Vercel | Vercel 项目被删或域名变了 |
+| 改了代码没生效 | 没推送或没重新部署 | `git push` 后平台会自动重建 |
 | 数据没了 | Serverless 无持久磁盘 | 见「关于数据」 |
+| `*.vercel.app` 打不开 | DNS 劫持 | 正常，用 netlify.app / pages.dev 入口访问 |
 
 ---
 
@@ -123,4 +116,4 @@ https://survey-platform.pages.dev
 
 双击项目根目录的 `start.bat`：后端 3000（`server/index.js` 常驻）、前端 5173，Vite 把 `/api` 代理到 3000。
 
-`functions/` 目录只在 Cloudflare 上生效，本地开发不会用到。
+`netlify/` 和 `functions/` 目录只在云平台上生效，本地开发不会用到。
