@@ -166,7 +166,15 @@ app.use(cors({
     callback(allowed ? null : new Error('Not allowed by CORS'), allowed)
   }
 }))
-app.use(express.json({ limit: '2mb' }))
+/* 请求体解析：
+   Vercel 这类 Serverless 平台会先把 body 解析好挂在 req.body 上，
+   此时再让 express.json() 去读同一个流会报错（返回 500），所以先判断一下。
+   本地 Node / 自己的服务器走正常的 express.json()。 */
+const jsonParser = express.json({ limit: '2mb' })
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object') return next()
+  return jsonParser(req, res, next)
+})
 
 /* 登录 */
 app.post('/api/auth/login', (req, res) => {
