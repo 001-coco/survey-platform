@@ -365,8 +365,7 @@ app.use((err, req, res, next) => {
     return res.status(403).json({ code: 403, message: '跨域来源不被允许' })
   }
   console.error(err)
-  // 临时诊断：把错误信息返回给前端，定位线上问题后再收敛掉
-  res.status(500).json({ code: 500, message: '服务端内部错误', detail: String(err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : err) })
+  res.status(500).json({ code: 500, message: '服务端内部错误' })
 })
 
 export default app

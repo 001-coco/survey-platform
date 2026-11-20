@@ -16,6 +16,7 @@
     "echarts": "^5.5.1",
     "element-plus": "^2.8.5",
     "express": "^4.21.1",
+    "hono": "^4.13.19",
     "pinia": "^2.2.4",
     "vue": "^3.5.11",
     "vue-router": "^4.4.5"

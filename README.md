@@ -25,14 +25,13 @@ npm run dev
 
 ## 上线
 
-按 **[DEPLOY.md](./DEPLOY.md)** 操作：
+线上地址：**https://survey-platform-coco.netlify.app**（账号 `admin / admin123`）
 
-- 页面部署在 **Netlify**（`*.netlify.app`，国内可访问，GitHub 登录免邮箱验证、不绑卡）
-- 接口部署在 **Vercel**，由 `netlify/functions/api.js` 在同域 `/api` 下转发过去
+整个项目部署在 **Netlify** 一个平台上：静态页面 + `/api/*` 函数，同域，不涉及跨域，不绑卡。
 
-> 为什么要这一层：`*.vercel.app` 在国内被 DNS 劫持，换 DNS、用加密 DNS 都拿不到真实地址，浏览器打不开；而 `*.netlify.app` 正常，所以用 Netlify 做入口、Vercel 做后端（服务器间通信不受本地 DNS 影响）。
->
-> 代价：后端在 Serverless 上，数据随实例回收而重置（演示够用，真实收数据需换数据库）。
+- 云端后端用 **Hono**（Serverless 里跑不了 Express 的 `app.listen`），本地仍是 Express，两边业务规则一致
+- 改完代码双击 **`deploy.bat`** 重新部署（本项目没接 Git 自动部署，`git push` 不会触发）
+- 详情见 **[DEPLOY.md](./DEPLOY.md)**
 
 ## 完整闭环
 
@@ -44,8 +43,8 @@ npm run dev
 
 ```
 server/app.js                   Express 应用本体（登录 / CRUD / 发布 / 提交 / 统计）
-server/index.js                 本地 / 服务器启动入口（只负责 app.listen）
-api/index.js                    Vercel Serverless 入口（复用同一个 app）
+server/index.js                 本地启动入口（只负责 app.listen）
+netlify/functions/api.js        云端后端（Hono，同一套业务规则，跑在 Netlify 函数里）
 src/
   api/request.js                Axios 封装（统一错误处理 + 取消重复请求 + 401 跳转）
   api/survey.js                 接口定义
