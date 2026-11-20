@@ -1,87 +1,126 @@
-# 上线部署（Vercel 单项目，免费、不绑卡）
+# 上线部署
 
-整个项目部署成**一个** Vercel 项目：前端页面和 `/api` 接口同域，不需要买服务器、不需要配跨域、不需要填任何环境变量。
+## 架构（为什么这么绕）
 
-- 网页地址：`https://xxx.vercel.app`
-- 接口地址：`https://xxx.vercel.app/api/...`（同一个域名）
+```
+浏览器  →  https://xxx.pages.dev        页面（Cloudflare Pages，国内可访问）
+        →  https://xxx.pages.dev/api/*  Cloudflare Function 转发
+                                        ↓ （服务器到服务器，不走国内 DNS）
+                     https://xxx.vercel.app/api/*   真正的接口（Vercel）
+```
 
----
+原因：`*.vercel.app` 在国内被 DNS 污染，浏览器打不开；`*.pages.dev` 可以正常访问。
 
-## 部署步骤
+所以页面放 Cloudflare，接口请求由 Cloudflare 边缘节点转发给 Vercel。**浏览器只和 pages.dev 打交道**，前端仍然是同域 `/api`，不存在跨域。
 
-### 1. 打开 Vercel 并登录
-
-https://vercel.com → **Continue with GitHub** → 授权
-
-免费 Hobby 套餐不需要绑卡。
-
-### 2. 导入仓库
-
-- 点 **Add New...** → **Project**
-- 在列表里找到 `survey-platform` → 点 **Import**
-
-（如果列表里没有，点 **Adjust GitHub App Permissions** 把仓库授权给 Vercel）
-
-### 3. 直接点 Deploy
-
-**什么都不要改，也不要加环境变量。**
-
-页面上的配置会自动读成：
-
-| 项 | 值 | 来源 |
-|---|---|---|
-| Framework Preset | Vite | `vercel.json` |
-| Build Command | `npm run build` | `vercel.json` |
-| Output Directory | `dist` | `vercel.json` |
-
-点 **Deploy**，等 1~2 分钟。
+转发实现在 `functions/api/[[path]].js`，只负责搬运请求，不改业务。
 
 ---
 
-## 部署完成后
+## 现状
 
-Vercel 会给你形如 `https://survey-platform-abc123.vercel.app` 的地址，打开即可用：
+| 部分 | 状态 |
+|---|---|
+| 后端接口 | ✅ 已部署在 Vercel（`survey-platform.vercel.app`） |
+| 前端页面 | 待部署到 Cloudflare Pages（就是下面这几步） |
 
-- 账号 `admin` / 密码 `admin123`
+---
 
-**为什么不用配环境变量？**
+## 第 1 步：注册 Cloudflare
 
-前端默认请求 `/api`（`src/api/request.js` 里的兜底值），而同域下的 `/api` 正好由 `api/index.js` 这个函数处理，所以生产环境什么都不用配。
+https://dash.cloudflare.com/sign-up
+
+- 用邮箱 + 密码注册即可（也可以选 GitHub 登录）
+- **不需要绑卡**
+- 注册后要收一封验证邮件，点邮件里的链接
+
+---
+
+## 第 2 步：创建 Pages 项目
+
+登录后进入控制台：
+
+1. 左侧菜单点 **Workers & Pages**
+2. 点 **Create**（或 **Create application**）
+3. 切到 **Pages** 标签 → 点 **Connect to Git**
+4. 授权 GitHub → 选仓库 `001-coco/survey-platform` → **Begin setup**
+
+---
+
+## 第 3 步：构建配置
+
+| 字段 | 填什么 |
+|---|---|
+| Project name | `survey-platform`（决定网址前缀） |
+| Production branch | `main` |
+| Framework preset | **Vue** |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+
+选 `Vue` 后构建命令和输出目录会自动填好，核对一下即可。
+
+**环境变量：不用加任何一条。**
+
+点 **Save and Deploy**，等 1~2 分钟。
+
+---
+
+## 第 4 步：拿到链接
+
+部署完成后会显示：
+
+```
+https://survey-platform.pages.dev
+```
+
+（名字被占用的话会带随机后缀）
+
+打开它，用 `admin / admin123` 登录。
+
+**这个链接国内可以直接打开，发给别人也能打开。**
+
+---
+
+## 如果接口报错
+
+说明 `functions/api/[[path]].js` 里写死的后端地址不对。去核对：
+
+1. 打开 Vercel 项目 → **Settings** → **Domains**，复制真实域名
+2. Cloudflare Pages 项目 → **Settings** → **Environment variables** → 添加：
+
+   | Name | Value |
+   |---|---|
+   | `BACKEND_ORIGIN` | `https://你的真实域名.vercel.app` |
+
+3. 回到 **Deployments** → 最新那条 → 右侧 `...` → **Retry deployment**
 
 ---
 
 ## 关于数据（重要）
 
-Vercel 的 Serverless 函数**没有持久磁盘**，`/tmp` 只在单个实例存活期间有效：
+后端跑在 Vercel Serverless 上，`/tmp` 不是持久存储：
 
-- 一段时间没人访问 → 实例回收 → 数据回到初始状态（只剩默认账号）
-- 两个人同时访问可能命中不同实例 → 互相看不到对方的数据
+- 实例回收后数据重置，只剩默认账号 `admin / admin123`
+- 多人同时访问可能命中不同实例，互相看不到对方数据
 
-**所以：用来演示、面试展示没问题；真要收集真实问卷数据，必须换数据库。**
-
-换数据库只需改 `server/app.js` 里的 `readDB()` / `writeDB()` 两个函数，上层的路由和校验都不用动。可选方案：
-
-- **Supabase**（Postgres，免费额度够用，不绑卡）
-- **Upstash Redis**（免费额度，按请求计费）
-- **Vercel Postgres / KV**（需要绑卡）
+**演示、面试展示够用；真要收真实问卷必须换数据库。** 换的时候只改 `server/app.js` 里的 `readDB()` / `writeDB()` 两个函数，路由和校验都不用动。可选：Supabase（免费、不绑卡）、Upstash Redis、Vercel Postgres。
 
 ---
 
-## 出问题看这里
+## 常见问题
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| 打开页面 404 | 部署失败或构建产物路径不对 | Vercel → Deployments → 看构建日志 |
-| 登录报「网络异常」 | `/api` 请求没有到达函数 | Vercel → 项目 → Functions 里确认 `api/index.js` 存在 |
-| 接口 500 | 函数运行时报错 | Vercel → 项目 → Logs（Real-time）查看堆栈 |
-| 登录后一会儿就掉线 | accessToken 只有 2 分钟，靠 refresh 续期 | 正常现象，会自动刷新；Network 里能看到 `/api/auth/refresh` |
-| 刷新页面数据没了 | 上面的「关于数据」 | 演示可忽略 |
-| 想改成前后端分开部署 | 需要另配 `VITE_API_BASE` 和后端 `ALLOWED_ORIGINS` | 见 `.env.example` |
+| pages.dev 打开白屏 | 构建产物目录填错 | 确认 Build output directory 是 `dist` |
+| 登录提示「网络异常」 | 转发地址不对 | 见上面「如果接口报错」 |
+| 接口返回 502 | Cloudflare 连不上 Vercel | Vercel 项目被删除或域名变了，核对 `BACKEND_ORIGIN` |
+| 改了代码没生效 | 没推送或没重新部署 | `git push` 后 Cloudflare 会自动重新构建 |
+| 数据没了 | Serverless 无持久磁盘 | 见「关于数据」 |
 
 ---
 
 ## 本地开发（不受影响）
 
-双击项目根目录的 `start.bat`，它会起后端 3000 + 前端 5173，Vite 把 `/api` 代理到 3000。
+双击项目根目录的 `start.bat`：后端 3000（`server/index.js` 常驻）、前端 5173，Vite 把 `/api` 代理到 3000。
 
-本地仍然用 `server/index.js` 常驻启动，和线上走的是同一份 `server/app.js`。
+`functions/` 目录只在 Cloudflare 上生效，本地开发不会用到。

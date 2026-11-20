@@ -25,11 +25,14 @@ npm run dev
 
 ## 上线
 
-按 **[DEPLOY.md](./DEPLOY.md)** 操作：整个项目部署成**一个 Vercel 项目**，前端页面与 `/api` 接口同域。
+按 **[DEPLOY.md](./DEPLOY.md)** 操作：
 
-- 免费 Hobby 套餐，**不需要绑卡**
-- 不需要配任何环境变量、不需要处理跨域
-- 代价：Serverless 没有持久磁盘，数据会随实例回收而重置（演示够用，真实收数据需换数据库）
+- 页面部署在 **Cloudflare Pages**（`*.pages.dev`，国内可访问，免费不绑卡）
+- 接口部署在 **Vercel**，由 `functions/api/[[path]].js` 在同域 `/api` 下转发过去
+
+> 为什么接口不直接放 Cloudflare：`*.vercel.app` 在国内被 DNS 污染，而 `*.pages.dev` 可以正常访问，所以用 Cloudflare 做入口、Vercel 做后端。
+>
+> 代价：后端在 Serverless 上，数据随实例回收而重置（演示够用，真实收数据需换数据库）。
 
 ## 完整闭环
 
