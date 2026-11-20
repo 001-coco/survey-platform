@@ -3,34 +3,33 @@
 ## 架构（为什么这么绕）
 
 ```
-浏览器  →  https://xxx.netlify.app        页面（Netlify，国内可访问，GitHub 登录免邮箱验证）
+浏览器  →  https://xxx.netlify.app        页面（Netlify，国内可访问）
         →  https://xxx.netlify.app/api/*  函数转发
                                         ↓（服务器到服务器，不走国内 DNS）
                      https://xxx.vercel.app/api/*   真正的接口（Vercel）
 ```
 
-原因：`*.vercel.app` 在国内被 DNS 劫持（解析到无关 IP，换 DNS、用加密 DNS 均无效），浏览器打不开；而 `*.netlify.app` 和 `*.pages.dev` 可以正常访问。
+原因：`*.vercel.app` 在国内被 DNS 劫持——解析到无关 IP，换 DNS 服务器、用加密 DNS（DoH）都拿不到真实地址，浏览器打不开。而 `*.netlify.app` 可以正常访问。
 
-所以页面放在能访问的平台上，接口请求由平台的服务端转发给 Vercel。浏览器全程只和 netlify.app 打交道，前端仍然是同域 `/api`，不存在跨域。
+所以页面放 Netlify，接口请求由 Netlify 的服务端转发给 Vercel。浏览器全程只和 netlify.app 打交道，前端仍然是同域 `/api`，不存在跨域。
 
-- Netlify 版转发：`netlify/functions/api.js`
-- Cloudflare 版转发：`functions/api/[[path]].js`
+转发实现：`netlify/functions/api.js`（只搬运请求，不改业务逻辑）。
 
-两套只保留一套即可，转发逻辑完全一样。
+> Cloudflare Pages 也测过（`functions/api/[[path]].js` 曾存在），但 `dash.cloudflare.com` 当前访问不稳定，无法完成注册部署，已移除。若日后 Cloudflare 恢复，转发逻辑可参考 git 历史。
 
 ---
 
-## 方案 A：Netlify（推荐）
+## 部署步骤
 
-**优点：用 GitHub 账号登录，不需要邮箱验证码。**
-
-### 1. 注册 / 登录
+### 1. 登录 Netlify
 
 https://app.netlify.com
 
 点 **Sign up** → 选 **GitHub** → 授权。
 
-不需要邮箱验证，不需要绑卡。
+- **不需要邮箱验证码**（这正是选它的原因）
+- **不需要绑卡**
+- 若询问团队名 / 用途，随便填
 
 ### 2. 导入仓库
 
@@ -46,9 +45,7 @@ Netlify 会读取仓库里的 `netlify.toml`，自动填好：
 | Build command | `npm run build` |
 | Publish directory | `dist` |
 
-**不用加任何环境变量。**
-
-点 **Deploy site**，等 1~2 分钟。
+**不要加任何环境变量**，点 **Deploy site**，等 1~2 分钟。
 
 ### 4. 拿到链接
 
@@ -56,20 +53,9 @@ Netlify 会读取仓库里的 `netlify.toml`，自动填好：
 https://随机名字.netlify.app
 ```
 
-可在 **Site configuration → Change site name** 改成好记的名字。
+想改名字：**Site configuration → Change site name**。
 
----
-
-## 方案 B：Cloudflare Pages
-
-同样可行，但注册要收邮箱验证码（QQ 邮箱容易拦截，去垃圾箱找）。
-
-1. https://dash.cloudflare.com → 注册 → 验证邮箱
-2. **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
-3. 选仓库，Framework preset 选 **Vue**，Build command `npm run build`，Output `dist`
-4. **Save and Deploy**
-
-得到 `https://xxx.pages.dev`。
+打开后用 `admin / admin123` 登录。
 
 ---
 
@@ -78,13 +64,13 @@ https://随机名字.netlify.app
 说明转发层里写死的 Vercel 地址不对（默认 `https://survey-platform.vercel.app`）。
 
 1. Vercel 项目 → **Settings** → **Domains**，复制真实域名
-2. 在 Netlify / Cloudflare 的环境变量里加：
+2. Netlify → **Site configuration → Environment variables** → 添加：
 
    | Name | Value |
    |---|---|
    | `BACKEND_ORIGIN` | `https://你的真实域名.vercel.app` |
 
-3. 重新部署（Netlify: Deploys → Trigger deploy）
+3. **Deploys** → 最新一条 → **Trigger deploy** → **Deploy site**
 
 ---
 
@@ -103,12 +89,13 @@ https://随机名字.netlify.app
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| 打开白屏 | 发布目录填错 | 确认 publish/output 是 `dist` |
+| 打开白屏 | 发布目录填错 | 确认 Publish directory 是 `dist` |
 | 登录提示「网络异常」 | 转发地址不对 | 见「如果接口报错」 |
-| 接口 502 | 平台连不上 Vercel | Vercel 项目被删或域名变了 |
-| 改了代码没生效 | 没推送或没重新部署 | `git push` 后平台会自动重建 |
+| 接口 502 | Netlify 连不上 Vercel | Vercel 项目被删或域名变了 |
+| 改了代码没生效 | 没推送或没重新部署 | `git push` 后 Netlify 会自动重建 |
 | 数据没了 | Serverless 无持久磁盘 | 见「关于数据」 |
-| `*.vercel.app` 打不开 | DNS 劫持 | 正常，用 netlify.app / pages.dev 入口访问 |
+| `*.vercel.app` 打不开 | DNS 劫持 | 正常现象，通过 netlify.app 入口访问 |
+| `dash.cloudflare.com` 打不开 | 访问不稳定 | 本项目已不依赖 Cloudflare |
 
 ---
 
@@ -116,4 +103,4 @@ https://随机名字.netlify.app
 
 双击项目根目录的 `start.bat`：后端 3000（`server/index.js` 常驻）、前端 5173，Vite 把 `/api` 代理到 3000。
 
-`netlify/` 和 `functions/` 目录只在云平台上生效，本地开发不会用到。
+`netlify/` 目录只在 Netlify 上生效，本地开发不会用到。

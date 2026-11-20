@@ -27,10 +27,10 @@ npm run dev
 
 按 **[DEPLOY.md](./DEPLOY.md)** 操作：
 
-- 页面部署在 **Cloudflare Pages**（`*.pages.dev`，国内可访问，免费不绑卡）
-- 接口部署在 **Vercel**，由 `functions/api/[[path]].js` 在同域 `/api` 下转发过去
+- 页面部署在 **Netlify**（`*.netlify.app`，国内可访问，GitHub 登录免邮箱验证、不绑卡）
+- 接口部署在 **Vercel**，由 `netlify/functions/api.js` 在同域 `/api` 下转发过去
 
-> 为什么接口不直接放 Cloudflare：`*.vercel.app` 在国内被 DNS 污染，而 `*.pages.dev` 可以正常访问，所以用 Cloudflare 做入口、Vercel 做后端。
+> 为什么要这一层：`*.vercel.app` 在国内被 DNS 劫持，换 DNS、用加密 DNS 都拿不到真实地址，浏览器打不开；而 `*.netlify.app` 正常，所以用 Netlify 做入口、Vercel 做后端（服务器间通信不受本地 DNS 影响）。
 >
 > 代价：后端在 Serverless 上，数据随实例回收而重置（演示够用，真实收数据需换数据库）。
 
