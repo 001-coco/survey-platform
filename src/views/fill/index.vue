@@ -23,9 +23,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted, computed } from 'vue'
+import { ref, reactive, watch, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/ui'
 
 import SchemaRenderer from '@/components/SchemaRenderer.vue'
 import { getPublicSurvey, submitAnswer } from '@/api/survey'
@@ -43,12 +43,33 @@ const errors = reactive({})
 
 const draftKey = computed(() => `survey_draft_${route.params.id}`)
 
+/**
+ * 跨标签页草稿同步：
+ * storage 事件只能在不同的标签页之间传递，当前标签页收不到自己的写入，
+ * 所以这里用 BroadcastChannel 做「同一问卷多标签页」的实时同步，
+ * 用 tabId 防止消息回声（A 发出 → B 应用 → B 再发回 A）。
+ */
+const tabId = Math.random().toString(36).slice(2, 8)
+const draftChannel = 'BroadcastChannel' in window
+  ? new BroadcastChannel('survey-draft-sync')
+  : null
+
+if (draftChannel) {
+  draftChannel.onmessage = (event) => {
+    const payload = event.data
+    if (!payload || payload.id !== route.params.id || payload.from === tabId) return
+    model.value = payload.value
+    draftSaved.value = true
+  }
+}
+
 /** 草稿自动保存：内容变化后写入 localStorage，刷新可继续填 */
 watch(
   model,
   (value) => {
     localStorage.setItem(draftKey.value, JSON.stringify(value))
     draftSaved.value = true
+    draftChannel?.postMessage({ id: route.params.id, from: tabId, value })
   },
   { deep: true }
 )
@@ -87,6 +108,11 @@ async function handleSubmit() {
 }
 
 onMounted(load)
+
+onBeforeUnmount(() => {
+  // 不关通道就是典型的 detached 引用：组件卸载后实例还活着
+  draftChannel?.close()
+})
 </script>
 
 <style scoped>

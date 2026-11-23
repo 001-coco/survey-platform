@@ -1,129 +1,160 @@
-import axios from 'axios'
-import { ElMessage } from 'element-plus'
-
 /**
- * 请求层封装，面试可以展开讲的三件事：
- * 1. 统一错误处理：业务 code !== 0 统一弹提示并 reject，页面不用重复写 catch
- * 2. 取消重复请求：同一个请求在上一个没回来时再次发起，先 abort 掉旧的
- * 3. 401 统一跳转登录，避免每个页面都判断一遍
+ * 手写请求内核（替换 axios）
+ *
+ * 这一层把以前由 axios 提供的能力全部自己实现：
+ *   1. 请求/响应拦截：统一 headers、统一拆 { code, data, message }
+ *   2. 双 token 无感刷新：refreshPromise 单例 + 401 重放
+ *   3. 重试：仅对网络错误 / 5xx 重试，4xx 不重试（重试也没用）
+ *   4. 并发控制：runPool 限制「任务创建」而不是「已有 promise」
+ *   5. Promise 静态方法：myAll / myAllSettled 用于批量操作
  */
-/* 本地开发走 vite 代理（/api），线上由 VITE_API_BASE 指向真实后端地址 */
+import { ElMessage } from '@/ui'
+import { retry, runPool, myAll, myAllSettled, myRace, myAny } from '@/core'
+
 const BASE_URL = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
 
-const service = axios.create({
-  baseURL: BASE_URL,
-  timeout: 10000
-})
-
-/* ---------- 无感刷新 ----------
- * 1. refreshPromise 单例：同一时刻并发的多个 401 只发一次刷新请求，
- *    其余请求都在 await 同一个 promise，等价于「挂起 → 刷新成功 → 一起重放」
- * 2. 刷新用的请求走裸 axios，不经过本文件的拦截器，否则 401 会递归
- */
+/** refresh 单例：同一时刻 5 个请求 401，只发一次 /auth/refresh */
 let refreshPromise = null
 
 function refreshToken() {
   if (!refreshPromise) {
-    refreshPromise = axios
-      .post(`${BASE_URL}/auth/refresh`, { refreshToken: localStorage.getItem('refreshToken') })
-      .then((res) => {
-        const token = res.data?.data?.token
-        if (!token) throw new Error('refresh failed')
-        localStorage.setItem('token', token)
-        return token
+    refreshPromise = fetch(`${BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: localStorage.getItem('refreshToken') })
+    })
+      .then((res) => res.json())
+      .then((body) => {
+        if (body.code !== 0 || !body.data?.token) throw new Error('refresh failed')
+        localStorage.setItem('token', body.data.token)
+        return body.data.token
       })
       .finally(() => {
-        refreshPromise = null // 无论成败都要复位，否则后续拿到的永远是旧 promise
+        // 必须复位，否则后续所有刷新都拿到这个已完成的旧 promise
+        refreshPromise = null
       })
   }
   return refreshPromise
 }
 
 function clearLoginState() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('refreshToken')
+  ;['token', 'refreshToken', 'username', 'role'].forEach((key) => localStorage.removeItem(key))
   window.location.hash = '#/login'
 }
 
-/* ---------- 重复请求取消 ---------- */
-const pendingMap = new Map()
-
-function getRequestKey(config) {
-  return [config.method, config.url, JSON.stringify(config.params || {}), JSON.stringify(config.data || {})].join('&')
-}
-
-function removePending(config) {
-  if (!config) return
-  const key = getRequestKey(config)
-  const controller = pendingMap.get(key)
-  if (controller) {
-    controller.abort()
-    pendingMap.delete(key)
+/** 最底层的一次 fetch，不含重试与刷新 */
+async function rawRequest({ path, method, params, body, auth, signal }) {
+  let url = BASE_URL + path
+  if (params && Object.keys(params).length) {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') query.set(k, String(v))
+    })
+    const qs = query.toString()
+    if (qs) url += `?${qs}`
   }
-}
 
-/* ---------- 请求拦截器 ---------- */
-service.interceptors.request.use(
-  (config) => {
+  const headers = {}
+  if (auth) {
     const token = localStorage.getItem('token')
-    if (token) config.headers.Authorization = `Bearer ${token}`
-
-    removePending(config) // 先取消上一个相同请求
-    const controller = new AbortController()
-    config.signal = controller.signal
-    pendingMap.set(getRequestKey(config), controller)
-
-    return config
-  },
-  (error) => Promise.reject(error)
-)
-
-/* ---------- 响应拦截器 ---------- */
-service.interceptors.response.use(
-  (response) => {
-    removePending(response.config)
-    const body = response.data
-    if (body.code === 0) return body.data // 直接返回 data，调用方少写一层
-
-    ElMessage.error(body.message || '请求失败')
-    return Promise.reject(new Error(body.message))
-  },
-  (error) => {
-    removePending(error.config)
-
-    // 主动取消的请求不弹错误提示
-    if (axios.isCancel?.(error) || error.name === 'CanceledError') {
-      return Promise.reject(error)
-    }
-
-    const status = error.response?.status
-    const config = error.config || {}
-
-    // 401 先尝试续期并重放一次；_retry 标记防止「重放又 401」时无限循环
-    if (status === 401 && !config._retry && !String(config.url).includes('/auth/refresh')) {
-      config._retry = true
-      return refreshToken()
-        .then((token) => {
-          config.headers = { ...config.headers, Authorization: `Bearer ${token}` }
-          return service(config)
-        })
-        .catch(() => {
-          ElMessage.error('登录已过期，请重新登录')
-          clearLoginState()
-          return Promise.reject(error)
-        })
-    }
-
-    if (status === 401) {
-      ElMessage.error('登录已过期，请重新登录')
-      clearLoginState()
-    } else if (status === 403) {
-      ElMessage.error('没有权限执行该操作')
-    } else {
-      ElMessage.error(error.response?.data?.message || '网络异常，请稍后重试')
-    }
-    return Promise.reject(error)
+    if (token) headers.Authorization = `Bearer ${token}`
   }
-)
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
 
-export default service
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal
+  })
+
+  const contentType = response.headers.get('content-type') || ''
+  const payload = contentType.includes('json') ? await response.json() : await response.text()
+
+  if (!response.ok) {
+    const error = new Error(payload?.message || `HTTP ${response.status}`)
+    error.status = response.status
+    error.response = payload
+    throw error
+  }
+  if (payload && typeof payload === 'object' && payload.code !== undefined && payload.code !== 0) {
+    const error = new Error(payload.message || '请求失败')
+    error.code = payload.code
+    throw error
+  }
+  return payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload
+}
+
+/** 401 → 刷新 → 重放一次；_retry 标记防止重放后再次 401 时死循环 */
+async function withAuthRefresh(options, retried = false) {
+  try {
+    return await rawRequest(options)
+  } catch (error) {
+    const isAuthApi = options.path.includes('/auth/')
+    if (error.status === 401 && !retried && !isAuthApi) {
+      try {
+        await refreshToken()
+        return await rawRequest(options, true)
+      } catch (refreshError) {
+        clearLoginState()
+        throw refreshError
+      }
+    }
+    if (error.status === 401) clearLoginState()
+    throw error
+  }
+}
+
+function shouldRetry(error) {
+  // 网络错误（status 为 undefined）和 5xx 值得重试；4xx 是请求本身有问题
+  if (error.name === 'AbortError') return false
+  if (error.status === undefined) return true
+  return error.status >= 500
+}
+
+function createMethod(method) {
+  return function request(path, config = {}) {
+    const options = {
+      path,
+      method,
+      params: config.params,
+      body: config.data,
+      auth: config.auth !== false,
+      signal: config.signal
+    }
+
+    const exec = () => withAuthRefresh(options)
+
+    if (method === 'GET' && config.retry !== false) {
+      return retry(exec, { retries: 1, baseDelay: 220, shouldRetry })
+    }
+    return exec().catch((error) => {
+      if (error.name !== 'AbortError' && !config.silent) {
+        ElMessage.error(error.message || '请求失败')
+      }
+      throw error
+    })
+  }
+}
+
+const request = {
+  get: createMethod('GET'),
+  post: createMethod('POST'),
+  put: createMethod('PUT'),
+  delete: createMethod('DELETE'),
+
+  /** 批量请求：全部成功才算成功，任一失败立即失败 */
+  all: myAll,
+  allSettled: myAllSettled,
+  race: myRace,
+  any: myAny,
+
+  /**
+   * 并发受限的批量请求。
+   * 注意传进来的是「任务函数数组」而不是 promise 数组：
+   * promise 一旦创建就已经在跑了，对已存在的 promise 做限流是自欺欺人。
+   */
+  pool: runPool
+}
+
+export default request

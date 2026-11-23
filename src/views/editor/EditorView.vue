@@ -43,13 +43,14 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/ui'
 
 import MaterialPanel from './MaterialPanel.vue'
 import CanvasArea from './CanvasArea.vue'
 import PropPanel from './PropPanel.vue'
 import { createQuestion, createSurveySchema } from './widgets'
 import { useHistory } from './useHistory'
+import { deepClone } from '@/core'
 import { getSurvey, createSurvey, updateSurvey } from '@/api/survey'
 import SchemaRenderer from '@/components/SchemaRenderer.vue'
 
@@ -64,7 +65,7 @@ const previewVisible = ref(false)
 const previewModel = ref({})
 
 /* ---------- 撤销 / 重做 ---------- */
-const { canUndo, canRedo, undo, redo, record } = useHistory(
+const { canUndo, canRedo, undo, redo, record, totalSnapshots } = useHistory(
   () => survey.questions,
   (snapshot) => {
     survey.questions = snapshot
@@ -110,7 +111,7 @@ function handleMove(index, offset) {
 
 function handleCopy(index) {
   record()
-  const copy = JSON.parse(JSON.stringify(survey.questions[index]))
+  const copy = deepClone(survey.questions[index])
   copy.id = createQuestion(copy.type).id // 生成新 id，避免 key 冲突
   survey.questions.splice(index + 1, 0, copy)
 }
@@ -124,6 +125,14 @@ function handleRemove(index) {
 
 /* ---------- 快捷键 ---------- */
 function onKeydown(e) {
+  // 焦点在输入框里时，把快捷键还给浏览器：
+  // 否则在标题输入框按 Delete 会删题，按 Ctrl+Z 会撤销题目而不是文字
+  const target = e.target
+  const typing =
+    target &&
+    (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)
+  if (typing) return
+
   const isCtrl = e.ctrlKey || e.metaKey
   if (isCtrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
     e.preventDefault()

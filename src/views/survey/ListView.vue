@@ -52,8 +52,9 @@
 
 <script setup>
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from '@/ui'
 import { getSurveyList, deleteSurvey, togglePublish } from '@/api/survey'
+import { debounce } from '@/core'
 
 const loading = ref(false)
 const list = ref([])
@@ -66,7 +67,8 @@ const listCache = new Map() // key -> { time, data }
 
 /** key 用固定顺序拼接，避免对象序列化顺序不同导致命中率下降 */
 function cacheKey() {
-  return [query.page, query.size, query.keyword.trim(), query.status].join('|')
+  // 带上用户名：否则同页面换账号后会命中上一个人的列表
+  return [localStorage.getItem('username') || '', query.page, query.size, query.keyword.trim(), query.status].join('|')
 }
 
 /** 任何写操作后列表都会失真，直接清空缓存（比精确失效简单且不会错） */
@@ -94,19 +96,18 @@ async function load() {
   }
 }
 
-/* ---------- 搜索防抖：停止输入 300ms 才发请求 ---------- */
-let searchTimer = null
+/* ---------- 搜索防抖：使用 core/ 里手写的 debounce ---------- */
+const loadDebounced = debounce(() => {
+  query.page = 1
+  load()
+}, 300)
 
 function onKeywordInput() {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    query.page = 1
-    load()
-  }, 300)
+  loadDebounced()
 }
 
 function onSearchNow() {
-  clearTimeout(searchTimer)
+  loadDebounced.cancel() // 立刻搜索时取消挂起的防抖，避免多打一次请求
   query.page = 1
   load()
 }
@@ -153,7 +154,7 @@ function formatTime(ts) {
 onMounted(load)
 
 // 组件卸载时清掉未执行的防抖定时器，避免卸载后仍触发一次请求
-onBeforeUnmount(() => clearTimeout(searchTimer))
+onBeforeUnmount(() => loadDebounced.cancel())
 </script>
 
 <style scoped>

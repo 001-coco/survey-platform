@@ -1,17 +1,16 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import AutoImport from 'unplugin-auto-import/vite'
-import Components from 'unplugin-vue-components/vite'
-import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { fileURLToPath, URL } from 'node:url'
 
+/**
+ * 刻意移除了 unplugin-auto-import / unplugin-vue-components：
+ *   1. 它们属于「工程化便利」，但会掩盖「组件从哪来」这个最基本的问题；
+ *   2. 现在所有组件由 src/ui/index.js 显式注册，来源一目了然。
+ *
+ * /api 依然走 Vite 代理，但同时也给后端配好了 CORS（真跨域可在设置页验证）。
+ */
 export default defineConfig({
-  plugins: [
-    vue(),
-    // Element Plus 按需引入：模板里用到的组件、脚本里用到的 ElMessage 等 API 都自动 import 并带上对应样式
-    AutoImport({ resolvers: [ElementPlusResolver()] }),
-    Components({ resolvers: [ElementPlusResolver()] })
-  ],
+  plugins: [vue()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
@@ -20,10 +19,19 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // 前端只认 /api，由 Vite 转发到 Express，避免跨域配置
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true
+      }
+    }
+  },
+  build: {
+    target: 'es2020',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vue: ['vue', 'vue-router']
+        }
       }
     }
   }

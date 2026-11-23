@@ -4,9 +4,71 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>问卷搭建与数据回收平台</title>
+
+    <!--
+      白屏治理 ①：关键 CSS 内联。
+      外部样式还没下载完时，首帧也能画出骨架，用户看不到纯白页面。
+    -->
+    <style>
+      :root { color-scheme: light; --bg:#f5f6f8; --line:#e3e6ec; --card:#fff; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body { background: var(--bg); font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1f2329; }
+      .boot { display: grid; grid-template-columns: 180px 1fr; min-height: 100vh; }
+      .boot__side { border-right: 1px solid var(--line); background: var(--card); padding: 20px 14px; }
+      .boot__main { padding: 24px; }
+      .boot__bar { height: 12px; border-radius: 6px; margin-bottom: 10px; background: linear-gradient(90deg, #eef0f4 25%, #fff 37%, #eef0f4 63%); background-size: 400% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+      @keyframes shimmer { 0% { background-position: 100% 0 } 100% { background-position: 0 0 } }
+      @media (max-width: 860px) { .boot { grid-template-columns: 1fr } .boot__side { display: none } }
+      .boot-fallback { display: none; max-width: 520px; margin: 15vh auto; padding: 24px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+      .boot-fallback h1 { font-size: 16px; margin: 0 0 8px; }
+      .boot-fallback p { margin: 6px 0; color: #5b6472; }
+      .boot-fallback code { display: block; margin-top: 12px; padding: 10px; background: #f5f6f8; border-radius: 6px; font-size: 12px; white-space: pre-wrap; }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="boot">
+        <aside class="boot__side"><div class="boot__bar" style="width:70%"></div></aside>
+        <main class="boot__main">
+          <div class="boot__bar" style="width:28%;height:20px"></div>
+          <div class="boot__bar" style="height:160px;border-radius:10px"></div>
+          <div class="boot__bar" style="height:120px;border-radius:10px"></div>
+        </main>
+      </div>
+    </div>
+
+    <!-- 白屏治理 ②：启动失败兜底页 -->
+    <div class="boot-fallback" id="boot-fallback">
+      <h1>页面没能启动</h1>
+      <p>脚本加载失败或执行超时，但你看到的不是空白页。</p>
+      <p>常见原因：网络断开、静态资源 404、运行时报错。</p>
+      <code id="boot-fallback-detail"></code>
+    </div>
+
+    <script>
+      window.__SURVEY_READY__ = false
+      function showBootFallback(detail) {
+        if (window.__SURVEY_READY__) return
+        var boot = document.querySelector('.boot')
+        var box = document.getElementById('boot-fallback')
+        if (boot) boot.style.display = 'none'
+        if (box) box.style.display = 'block'
+        var tip = document.getElementById('boot-fallback-detail')
+        if (tip) tip.textContent = String(detail || '未知原因')
+      }
+      window.addEventListener('error', function (e) {
+        var el = e.target
+        if (el && el !== window && (el.tagName === 'SCRIPT' || el.tagName === 'LINK')) {
+          showBootFallback('资源加载失败：' + (el.src || el.href))
+        }
+      }, true)
+      // 白屏治理 ③：看门狗
+      setTimeout(function () {
+        if (!window.__SURVEY_READY__) showBootFallback('首屏脚本执行超时（>3s）')
+      }, 3000)
+    </script>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

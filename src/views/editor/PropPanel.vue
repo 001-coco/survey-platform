@@ -89,6 +89,25 @@
 <script setup>
 import { computed } from 'vue'
 import { WIDGET_TYPES, createId } from './widgets'
+import { debounce } from '@/core'
+
+/**
+ * 连续输入合并成一步撤销：
+ * 不能用「尾部防抖」——那样 record() 会在内容改完之后才执行，快照就错了。
+ * 正确做法是「首击记录 + 尾部防抖复位」：一组输入只在第一次动笔前存快照。
+ */
+let inBurst = false
+const endBurst = debounce(() => {
+  inBurst = false
+}, 500)
+
+function markEdit() {
+  if (!inBurst) {
+    emit('beforeEdit')
+    inBurst = true
+  }
+  endBurst()
+}
 
 const props = defineProps({
   question: { type: Object, default: null },
@@ -115,27 +134,27 @@ const dependsOptions = computed(() => {
 })
 
 function update(key, value) {
-  emit('beforeEdit') // 通知父组件先记录历史快照
+  markEdit() // 一组输入只在动笔前记录一次快照
   props.question[key] = value
 }
 
 function addOption() {
-  emit('beforeEdit')
+  markEdit()
   props.question.options.push({ label: `选项 ${props.question.options.length + 1}`, value: createId('o') })
 }
 
 function updateOptionLabel(index, value) {
-  emit('beforeEdit')
+  markEdit()
   props.question.options[index].label = value
 }
 
 function removeOption(index) {
-  emit('beforeEdit')
+  markEdit()
   props.question.options.splice(index, 1)
 }
 
 function setConditionField(field, value) {
-  emit('beforeEdit')
+  markEdit()
   const condition = props.question.condition || { dependsOn: '', operator: 'eq', value: '' }
   condition[field] = value
 

@@ -1,24 +1,23 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { ElLoading } from 'element-plus'
-
-// 组件样式已经由 unplugin-vue-components 按需注入，这里只补「非组件」的样式：
-// v-loading 指令、以及 ElMessage / ElMessageBox 这类命令式 API
-// 用 es/components/*/style/css 而不是 theme-chalk 单文件，前者会把依赖的基础样式一并带上
-import 'element-plus/es/components/loading/style/css'
-import 'element-plus/es/components/message/style/css'
-import 'element-plus/es/components/message-box/style/css'
 
 import App from './App.vue'
 import router from './router'
 import permission from './directives/permission'
+import UiPlugin from './ui'
+import { installErrorHooks } from './core'
+
 import './styles/index.css'
 
 const app = createApp(App)
 
+// 三类错误（资源 / 脚本 / Promise 拒绝）收口到同一个地方，不让任何一处直接白屏
+installErrorHooks(app)
+
 app.use(createPinia())
+app.use(UiPlugin) // 手写 UI 组件层：ElButton / ElTable / ElDialog … 全部是自己的代码
 app.use(router)
-app.use(ElLoading) // v-loading 指令
-app.directive('permission', permission) // v-permission="'survey:delete'"
+app.directive('permission', permission)
 
 app.mount('#app')
+window.__SURVEY_READY__ = true

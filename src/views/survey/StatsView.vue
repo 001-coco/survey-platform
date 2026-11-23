@@ -4,16 +4,30 @@
       <el-page-header @back="$router.back()" />
       <h3>{{ title }}</h3>
       <el-tag type="success">共回收 {{ stats?.total || 0 }} 份</el-tag>
+      <span class="grow"></span>
+      <span class="tag">SVG 手绘图表 · 无图表库</span>
     </div>
 
     <el-card v-loading="loading" shadow="never">
       <template #header><b>回收趋势</b></template>
-      <div ref="trendRef" class="chart" />
+      <MiniChart
+        type="line"
+        :labels="trendLabels"
+        :values="trendValues"
+        title="每日回收量"
+        color="#4f46e5"
+      />
     </el-card>
 
     <el-card v-for="question in choiceQuestions" :key="question.id" shadow="never" style="margin-top: 12px">
       <template #header><b>{{ question.title }}</b></template>
-      <div :ref="(el) => setChartEl(question.id, el)" class="chart" />
+      <MiniChart
+        type="bar"
+        :labels="question.options.map((o) => o.label)"
+        :values="question.options.map((o) => o.count)"
+        :title="question.title"
+        color="#0b6bcb"
+      />
     </el-card>
 
     <el-card v-for="question in textQuestions" :key="question.id" shadow="never" style="margin-top: 12px">
@@ -25,72 +39,31 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-// ECharts 按需引入：只装用到的图表类型、组件与渲染器，避免把整个 echarts 打进包里
-import * as echarts from 'echarts/core'
-import { LineChart, BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-
-echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 import { getStats, getSurvey } from '@/api/survey'
+import MiniChart from '@/components/MiniChart.vue'
 
+/**
+ * 以前这里用 ECharts：
+ *   - 按需引入 4 个模块 + echarts.use()
+ *   - 手动保存实例数组、resize、dispose
+ * 现在换成手写 SVG 组件：
+ *   - 没有实例，就没有实例泄漏
+ *   - 响应式由 Vue 管，数据变了自动重绘
+ *   - 打包体积直接少掉几十 KB
+ */
 const route = useRoute()
 
 const loading = ref(false)
 const stats = ref(null)
 const title = ref('')
-const trendRef = ref(null)
-const chartEls = ref({})
-
-/** 保存所有 echarts 实例，卸载和 resize 时要统一处理，否则内存泄漏 */
-let charts = []
 
 const choiceQuestions = computed(() => (stats.value?.questionStats || []).filter((q) => q.options))
 const textQuestions = computed(() => (stats.value?.questionStats || []).filter((q) => q.texts))
 
-function setChartEl(id, el) {
-  if (el) chartEls.value[id] = el
-}
-
-function disposeCharts() {
-  charts.forEach((c) => c.dispose())
-  charts = []
-}
-
-function renderCharts() {
-  disposeCharts()
-  if (!stats.value) return
-
-  if (trendRef.value) {
-    const chart = echarts.init(trendRef.value)
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      xAxis: { type: 'category', data: stats.value.trend.map((t) => t[0]) },
-      yAxis: { type: 'value', minInterval: 1 },
-      series: [{ type: 'line', smooth: true, data: stats.value.trend.map((t) => t[1]), areaStyle: {} }]
-    })
-    charts.push(chart)
-  }
-
-  choiceQuestions.value.forEach((question) => {
-    const el = chartEls.value[question.id]
-    if (!el) return
-    const chart = echarts.init(el)
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      xAxis: { type: 'category', data: question.options.map((o) => o.label) },
-      yAxis: { type: 'value', minInterval: 1 },
-      series: [{ type: 'bar', data: question.options.map((o) => o.count), itemStyle: { color: '#409eff' } }]
-    })
-    charts.push(chart)
-  })
-}
-
-function handleResize() {
-  charts.forEach((c) => c.resize())
-}
+const trendLabels = computed(() => (stats.value?.trend || []).map((item) => item[0]))
+const trendValues = computed(() => (stats.value?.trend || []).map((item) => item[1]))
 
 async function load() {
   loading.value = true
@@ -101,24 +74,14 @@ async function load() {
   } finally {
     loading.value = false
   }
-  await nextTick() // 等 DOM 渲染完再初始化图表，否则拿不到宽高
-  renderCharts()
 }
 
-onMounted(() => {
-  load()
-  window.addEventListener('resize', handleResize)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize)
-  disposeCharts()
-})
+onMounted(load)
 </script>
 
 <style scoped>
-.stats__bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.stats__bar h3 { margin: 0; }
-.chart { height: 260px; width: 100%; }
-.text-item { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+.stats__bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.stats__bar h3 { font-size: 16px; }
+.text-item { padding: 7px 2px; border-bottom: 1px solid #eef0f3; font-size: 13px; }
+.text-item:last-child { border: 0; }
 </style>
