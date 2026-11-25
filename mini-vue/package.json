@@ -1,0 +1,15 @@
+{
+  "name": "mini-vue",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "从零实现 Vue3 响应式系统与渲染器（学习用）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}
