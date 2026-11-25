@@ -19,6 +19,6 @@ if errorlevel 1 (
 call netlify deploy --build --prod
 
 echo.
-echo 部署结束。上面输出的 Website URL 就是线上地址。
+echo 部署结束
 echo.
 pause
