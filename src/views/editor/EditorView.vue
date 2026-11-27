@@ -43,7 +43,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from '@/ui'
+import { ElMessage } from  'element-plus'
 
 import MaterialPanel from './MaterialPanel.vue'
 import CanvasArea from './CanvasArea.vue'

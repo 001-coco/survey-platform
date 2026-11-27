@@ -8,7 +8,7 @@
  *   4. 并发控制：runPool 限制「任务创建」而不是「已有 promise」
  *   5. Promise 静态方法：myAll / myAllSettled 用于批量操作
  */
-import { ElMessage } from '@/ui'
+import { ElMessage } from 'element-plus'
 import { retry, runPool, myAll, myAllSettled, myRace, myAny } from '@/core'
 
 const BASE_URL = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')

@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "零 UI 库问卷平台：手写 CSS 组件 / 请求内核 / SVG 图表，Vue 3 实现搭建—发布—回收—统计闭环",
+  "description": "手写 CSS 组件 / 请求内核 / SVG 图表，Vue 3 实现搭建—发布—回收—统计闭环",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

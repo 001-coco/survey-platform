@@ -52,7 +52,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from '@/ui'
+import { ElMessage, ElMessageBox } from  'element-plus'
 import { getSurveyList, deleteSurvey, togglePublish } from '@/api/survey'
 import { debounce } from '@/core'
 

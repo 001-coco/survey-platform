@@ -25,7 +25,7 @@
 <script setup>
 import { ref, reactive, watch, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from '@/ui'
+import { ElMessage } from  'element-plus'
 
 import SchemaRenderer from '@/components/SchemaRenderer.vue'
 import { getPublicSurvey, submitAnswer } from '@/api/survey'
