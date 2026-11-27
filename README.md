@@ -2,7 +2,7 @@
 
  UI 库问卷平台：UI库 / 请求内核 / Echarts图表，用 Vue 3 实现「搭建 → 发布 → 填写 → 回收 → 统计」闭环。
 
-- 不用 Element Plus —— 23 个组件用原生 `h()` + 手写 CSS 实现（`src/ui/`）
+-  Element Plus —— 23 个组件
 - 用 axios —— 请求内核，含 Promise 静态方法、并发池、重试、双 token 无感刷新（`src/api/request.js`）
 - 用 ECharts —— 按需引入Echarts 折线图 / 柱状图（`src/components/MiniChart.vue`）
 - 不用 `JSON.parse(JSON.stringify())` —— 手写 `deepClone`（WeakMap 处理循环引用）
@@ -10,7 +10,7 @@
 
 ---
 
-## 运行
+运行
 
 ```bash
 npm install
@@ -33,7 +33,7 @@ npm run test:core
 
 ---
 
-手写清单
+
 
 | Element Plus 23 个组件 | 原生 render 函数 + 手写 CSS | `src/ui/index.js`、`src/ui/ui.css` |
 | axios 拦截器  | `src/api/request.js` |
@@ -47,14 +47,14 @@ npm run test:core
 
 ---
 
-## 目录
+目录
 
 ```
 src/
   
-  core/index.js           手写基础设施：deepClone / debounce / Promise 静态方法 /
+  core/index.js           deepClone / debounce / Promise 静态方法 /
                           并发池 / 重试 / EventBus / 私有计数器 / 错误收口
-  api/request.js          手写请求内核：401 单例刷新 + 重放 + 重试 + 并发池
+  api/request.js          401 单例刷新 + 重放 + 重试 + 并发池
   components/
     SchemaRenderer.vue    Schema 驱动渲染（动态组件注册表）
     MiniChart.vue         Echarts绘制折线图 / 柱状图
@@ -71,11 +71,11 @@ scripts/test-core.js      14 个用例，零测试框架
 
 ---
 
-> **问卷搭建与数据回收平台**　个人项目 · Vue 3 + 原生 JS/CSS · Node.js/Express　
+> 问卷搭建与数据回收平台　个人项目 · Vue 3 + 原生 JS/CSS · Node.js/Express　
 > 「搭建 → 发布 → 填写 → 回收 → 统计」闭环
-> - **请求内核**：使用axios实现双 token 单例刷新与并发 401 重放（5 个并发 401 只刷新 1 次）、指数退避重试与 4 并发上限；手写 `Promise.all/allSettled/race/any` 与原生逐项对拍。
-> - **编辑器**：用 `WeakMap + deepClone` 实现 50 步快照撤销，解决循环引用与分支快照问题；连续输入按「首击记录 + 尾部防抖复位」合并为一步，避免每敲一个字产生一条历史。
-> - **性能与稳定性**：手写防抖搜索（300ms）+ 30s 参数级缓存；使用ECharts消除实例泄漏；`index.html` 内联关键 CSS + 3s 看门狗 + 组件级错误边界，故障下不白屏；BroadcastChannel 同步多标签页草稿。
+> - 请求内核：使用axios实现双 token 单例刷新与并发 401 重放（5 个并发 401 只刷新 1 次）、指数退避重试与 4 并发上限；手写 `Promise.all/allSettled/race/any` 与原生逐项对拍。
+> - 编辑器：用 `WeakMap + deepClone` 实现 50 步快照撤销，解决循环引用与分支快照问题；连续输入按「首击记录 + 尾部防抖复位」合并为一步，避免每敲一个字产生一条历史。
+> - 性能与稳定性：手写防抖搜索（300ms）+ 30s 参数级缓存；使用ECharts消除实例泄漏；`index.html` 内联关键 CSS + 3s 看门狗 + 组件级错误边界，故障下不白屏；BroadcastChannel 同步多标签页草稿。
 
 ---
 简化：
