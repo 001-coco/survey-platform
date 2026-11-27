@@ -1,160 +1,105 @@
-/**
- * 手写请求内核（替换 axios）
- *
- * 这一层把以前由 axios 提供的能力全部自己实现：
- *   1. 请求/响应拦截：统一 headers、统一拆 { code, data, message }
- *   2. 双 token 无感刷新：refreshPromise 单例 + 401 重放
- *   3. 重试：仅对网络错误 / 5xx 重试，4xx 不重试（重试也没用）
- *   4. 并发控制：runPool 限制「任务创建」而不是「已有 promise」
- *   5. Promise 静态方法：myAll / myAllSettled 用于批量操作
- */
+// 引入 axios（现成的发请求工具）和消息提示组件
+import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { retry, runPool, myAll, myAllSettled, myRace, myAny } from '@/core'
 
+// 接口地址前缀：本地开发走 /api，部署时可用环境变量覆盖
 const BASE_URL = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
 
-/** refresh 单例：同一时刻 5 个请求 401，只发一次 /auth/refresh */
+// 创建一个 axios 实例，相当于造一台专门发请求的"机器"
+// baseURL：所有请求地址前面自动加 /api；timeout：10秒没响应就超时
+const service = axios.create({ baseURL: BASE_URL, timeout: 10000 })
+
+// ========== 登录过期自动刷新 ==========
+// 用一个变量记住"正在刷新的那一次请求"，避免同时来 5 个过期请求就刷新 5 次
 let refreshPromise = null
 
 function refreshToken() {
+  // 如果当前没有正在刷新的请求，才发起新的刷新
   if (!refreshPromise) {
-    refreshPromise = fetch(`${BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: localStorage.getItem('refreshToken') })
-    })
-      .then((res) => res.json())
-      .then((body) => {
-        if (body.code !== 0 || !body.data?.token) throw new Error('refresh failed')
-        localStorage.setItem('token', body.data.token)
-        return body.data.token
+    refreshPromise = service
+      // 拿刷新令牌去换一个新的登录令牌
+      .post('/auth/refresh', { refreshToken: localStorage.getItem('refreshToken') })
+      .then((res) => {
+        const token = res.data?.data?.token   // 从返回结果里取出新 token
+        if (!token) throw new Error('refresh failed')  // 没拿到就报错
+        localStorage.setItem('token', token)  // 把新 token 存起来，下次请求用
+        return token
       })
-      .finally(() => {
-        // 必须复位，否则后续所有刷新都拿到这个已完成的旧 promise
-        refreshPromise = null
-      })
+      .finally(() => { refreshPromise = null })  // 不管成功失败都要清空，否则以后永远用这个旧结果
   }
-  return refreshPromise
+  return refreshPromise  // 如果有正在刷新的，就直接把同一个结果给所有人用
 }
 
+// 登录彻底失效时：清掉本地所有登录信息，跳回登录页
 function clearLoginState() {
-  ;['token', 'refreshToken', 'username', 'role'].forEach((key) => localStorage.removeItem(key))
+  ;['token', 'refreshToken', 'username', 'role'].forEach((k) => localStorage.removeItem(k))
   window.location.hash = '#/login'
 }
 
-/** 最底层的一次 fetch，不含重试与刷新 */
-async function rawRequest({ path, method, params, body, auth, signal }) {
-  let url = BASE_URL + path
-  if (params && Object.keys(params).length) {
-    const query = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') query.set(k, String(v))
-    })
-    const qs = query.toString()
-    if (qs) url += `?${qs}`
-  }
-
-  const headers = {}
-  if (auth) {
+// ========== 请求拦截器：发出去之前自动做的事 ==========
+service.interceptors.request.use((config) => {
+  // 除了登录接口，其他请求都自动带上 token（证明你是谁）
+  if (config.auth !== false) {
     const token = localStorage.getItem('token')
-    if (token) headers.Authorization = `Bearer ${token}`
+    if (token) config.headers.Authorization = `Bearer ${token}`
   }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  return config  // 把加工好的请求交出去
+})
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal
-  })
+// ========== 响应拦截器：拿回来之后自动做的事 ==========
+service.interceptors.response.use(
+  // 成功回来的数据
+  (response) => {
+    const body = response.data
+    // 后端约定 code 不为 0 就是业务失败（比如"问卷不存在"），转成错误抛出
+    if (body && typeof body === 'object' && body.code !== undefined && body.code !== 0) {
+      return Promise.reject(new Error(body.message || '请求失败'))
+    }
+    // 把真正的数据从 { code, data, message } 里拆出来，页面直接拿到 data
+    return body && typeof body === 'object' && 'data' in body ? body.data : body
+  },
+  // 失败回来的请求（网络错误、401、500 等）
+  async (error) => {
+    const config = error.config        // 出错的那个请求的配置
+    if (!config) return Promise.reject(error)
+    const isAuthApi = config.url.includes('/auth/')  // 判断是不是登录/刷新接口本身
 
-  const contentType = response.headers.get('content-type') || ''
-  const payload = contentType.includes('json') ? await response.json() : await response.text()
-
-  if (!response.ok) {
-    const error = new Error(payload?.message || `HTTP ${response.status}`)
-    error.status = response.status
-    error.response = payload
-    throw error
-  }
-  if (payload && typeof payload === 'object' && payload.code !== undefined && payload.code !== 0) {
-    const error = new Error(payload.message || '请求失败')
-    error.code = payload.code
-    throw error
-  }
-  return payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload
-}
-
-/** 401 → 刷新 → 重放一次；_retry 标记防止重放后再次 401 时死循环 */
-async function withAuthRefresh(options, retried = false) {
-  try {
-    return await rawRequest(options)
-  } catch (error) {
-    const isAuthApi = options.path.includes('/auth/')
-    if (error.status === 401 && !retried && !isAuthApi) {
+    // 如果是 401（登录过期）且没重试过，就刷新 token 后自动再发一次
+    if (error.response?.status === 401 && !config._retried && !isAuthApi) {
+      config._retried = true           // 打标记：这是重试的一次，别无限重试
       try {
-        await refreshToken()
-        return await rawRequest(options, true)
-      } catch (refreshError) {
-        clearLoginState()
-        throw refreshError
+        await refreshToken()           // 先换新 token
+        return service(config)         // 用新 token 把刚才失败的请求重发一遍
+      } catch (e) {
+        clearLoginState()              // 连刷新都失败了，只能退出登录
+        return Promise.reject(e)
       }
     }
-    if (error.status === 401) clearLoginState()
-    throw error
+    // 普通 401（比如刷新接口自己过期了），直接清登录态
+    if (error.response?.status === 401) clearLoginState()
+    // 非静默请求弹一个错误提示（silent: true 表示调用方想自己处理，不弹）
+    if (!config.silent) ElMessage.error(error.response?.data?.message || error.message || '请求失败')
+    return Promise.reject(error)       // 把错误继续抛给页面
   }
-}
+)
 
-function shouldRetry(error) {
-  // 网络错误（status 为 undefined）和 5xx 值得重试；4xx 是请求本身有问题
-  if (error.name === 'AbortError') return false
-  if (error.status === undefined) return true
-  return error.status >= 500
-}
-
+// 造出 get / post / put / delete 四个方法，页面里就还是 request.get(...) 这么用
 function createMethod(method) {
-  return function request(path, config = {}) {
-    const options = {
-      path,
-      method,
-      params: config.params,
-      body: config.data,
-      auth: config.auth !== false,
-      signal: config.signal
-    }
-
-    const exec = () => withAuthRefresh(options)
-
-    if (method === 'GET' && config.retry !== false) {
-      return retry(exec, { retries: 1, baseDelay: 220, shouldRetry })
-    }
-    return exec().catch((error) => {
-      if (error.name !== 'AbortError' && !config.silent) {
-        ElMessage.error(error.message || '请求失败')
-      }
-      throw error
-    })
+  return (url, dataOrConfig = {}, maybeConfig = {}) => {
+    const isGet = method === 'get'
+    // get 请求：第二个参数是配置（里面有 params 查询参数）；其他请求：第二个参数是请求体
+    const config = isGet ? dataOrConfig : maybeConfig
+    const data = isGet ? undefined : dataOrConfig
+    return service.request({ ...config, url, method, data })
   }
 }
 
+// 最终导出的对象，页面从 '@/api/request' 引入的就是它
 const request = {
-  get: createMethod('GET'),
-  post: createMethod('POST'),
-  put: createMethod('PUT'),
-  delete: createMethod('DELETE'),
-
-  /** 批量请求：全部成功才算成功，任一失败立即失败 */
-  all: myAll,
-  allSettled: myAllSettled,
-  race: myRace,
-  any: myAny,
-
-  /**
-   * 并发受限的批量请求。
-   * 注意传进来的是「任务函数数组」而不是 promise 数组：
-   * promise 一旦创建就已经在跑了，对已存在的 promise 做限流是自欺欺人。
-   */
-  pool: runPool
+  get: createMethod('get'),
+  post: createMethod('post'),
+  put: createMethod('put'),
+  delete: createMethod('delete')
 }
 
 export default request

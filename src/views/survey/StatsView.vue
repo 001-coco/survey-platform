@@ -5,7 +5,7 @@
       <h3>{{ title }}</h3>
       <el-tag type="success">共回收 {{ stats?.total || 0 }} 份</el-tag>
       <span class="grow"></span>
-      <span class="tag">SVG 手绘图表 · 无图表库</span>
+      <span class="tag">Echarts引入柱状图，折线图</span>
     </div>
 
     <el-card v-loading="loading" shadow="never">
@@ -45,13 +45,7 @@ import { getStats, getSurvey } from '@/api/survey'
 import MiniChart from '@/components/MiniChart.vue'
 
 /**
- * 以前这里用 ECharts：
- *   - 按需引入 4 个模块 + echarts.use()
- *   - 手动保存实例数组、resize、dispose
- * 现在换成手写 SVG 组件：
- *   - 没有实例，就没有实例泄漏
- *   - 响应式由 Vue 管，数据变了自动重绘
- *   - 打包体积直接少掉几十 KB
+
  */
 const route = useRoute()
 

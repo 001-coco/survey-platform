@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "手写 CSS 组件 / 请求内核 / SVG 图表，Vue 3 实现搭建—发布—回收—统计闭环",
+  "description": "按需引入UI库 / 请求内核 / Echarts图表，Vue 3 实现搭建—发布—回收—统计闭环",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,7 +13,10 @@
     "test:core": "node scripts/test-core.js"
   },
   "dependencies": {
+    "axios": "^1.21.1",
     "cors": "^2.8.5",
+    "echarts": "^6.1.0",
+    "element-plus": "^2.14.8",
     "express": "^4.21.1",
     "hono": "^4.13.19",
     "pinia": "^2.2.4",
@@ -23,6 +26,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.4",
     "concurrently": "^9.1.2",
+    "unplugin-vue-components": "^32.1.0",
     "vite": "^5.4.10"
   }
 }
